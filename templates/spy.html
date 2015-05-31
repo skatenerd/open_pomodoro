@@ -9,14 +9,12 @@
         var bind_websockets = function(username, countdown_widget) {
           var inbox = new ReconnectingWebSocket("ws://"+ location.host + "/listen");
           var handle_refresh_message = function(message_body) {
-            has_open_session = true;
             countdown_widget.set_busy(new Date(message_body.expiration));
             $("#state_notes").text(message_body.notes);
             $("#notes_wrapper").toggle(!!message_body.notes.length);
           }
 
           var handle_delete_message = function(message_body) {
-            has_open_session = false;
             countdown_widget.set_expired();
             $("#notes_wrapper").toggle(false);
           }
