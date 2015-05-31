@@ -1,0 +1,75 @@
+<html>
+  <head>
+    <script type="text/javascript" src="/static/jquery.min.js"></script>
+    <script type="text/javascript">
+      $(function() {
+        $("#login input[type=submit]").on('click', function(e) {
+          e.preventDefault();
+          $.ajax({
+            type: 'POST',
+            url: '/login',
+            beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+            data: {username: $('#login [name=username]').val(), password: $('#login [name=password]').val()},
+            success: function(response) {
+              window.location.href = response.new_path;
+            },
+            error: function() {
+              console.log('fail');
+            },
+          })
+        });
+        $(function() {
+          $("#signup input[type=submit]").on('click', function(e) {
+            e.preventDefault();
+            $.ajax({
+              type: 'POST',
+              url: '/create_account',
+              beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+              data: {username: $('#signup [name=username]').val(), password: $('#signup [name=password]').val()},
+              success: function(response) {
+                window.location.href = response.new_path;
+              },
+              error: function() {
+                console.log('fail');
+              },
+            })
+          });
+        });
+        $("#spy_on_someone input[type=submit]").on('click', function(e) {
+          e.preventDefault();
+          window.location.pathname = "/watch/" + $("#spy_on_someone input[name=spied_person]").val();
+        });
+      });
+    </script>
+    <meta id="csrf_token" csrf_token="{{ csrf_token() }}">
+  </head>
+  <body>
+    <h3>
+      Welcome
+    </h3>
+    <form id="spy_on_someone">
+      <label>
+        Spy on someone:
+        <input type='text' name='spied_person'>
+      </label>
+      <input type='submit'>
+    </form>
+    <br>
+    <form id="login">
+      <h4>
+        LOGIN
+      </h4>
+      <input type='text' name='username'>
+      <input type='password' name='password'>
+      <input type='submit'>
+    </form>
+    <form id="signup">
+      <h4>
+        NEW ACCOUNT
+      </h4>
+      <input type='text' name='username'>
+      <input type='password' name='password'>
+      <input type='submit'>
+    </form>
+  </body>
+</html>

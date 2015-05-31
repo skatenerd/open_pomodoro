@@ -1,0 +1,170 @@
+<html>
+  <head>
+    <meta id="csrf_token" csrf_token="{{ csrf_token() }}">
+    <script type="text/javascript" src="/static/reconnecting-websocket.min.js"></script>
+    <script type="text/javascript" src="/static/jquery.min.js"></script>
+    <script type="text/javascript">
+      $(function() {
+        var username = {{ account_key|tojson|safe }};
+        var bind_websockets = function(username, countdown_widget) {
+          var inbox = new ReconnectingWebSocket("ws://"+ location.host + "/listen");
+          var handle_refresh_message = function(message_body) {
+            has_open_session = true;
+            countdown_widget.set_busy(new Date(message_body.expiration));
+            $("#state_notes").text(message_body.notes);
+            $("#notes_wrapper").toggle(!!message_body.notes.length);
+          }
+
+          var handle_delete_message = function(message_body) {
+            has_open_session = false;
+            countdown_widget.set_expired();
+            $("#notes_wrapper").toggle(false);
+          }
+
+          var ask_to_follow = function(username) {
+            var sendpoll = setInterval(
+              function(){
+                if (inbox.readyState) {
+                  inbox.send(username);
+                  clearInterval(sendpoll);
+                }
+              },
+              100);
+          };
+
+          inbox.onmessage=function(raw_message) {
+            var message = JSON.parse(raw_message.data);
+            if (message.type == 'session_delete') {
+              handle_delete_message(message.body);
+            }
+            if (message.type == 'session_refresh') {
+              handle_refresh_message(message.body);
+            }
+          };
+          ask_to_follow(username);
+        };
+
+        var bind_form_submits = function() {
+          var update_status = function(duration, notes) {
+            $.ajax({
+              type: 'PUT',
+              beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+              contentType: 'application/json',
+              url: '/sessions',
+              data: JSON.stringify({duration: duration, notes: notes}),
+            })
+          };
+
+          $("#new_session input[type=submit]").on('click', function(e) {
+            e.preventDefault();
+            update_status(parseInt($("#new_session [name=duration]").val()), $("#new_session [name=notes]").val());
+          });
+          $("#clear_session").on('click', function(e) {
+            $.ajax({
+              type: 'DELETE',
+              beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+              contentType: 'application/json',
+              url: '/sessions',
+            })
+          });
+        };
+
+
+        var CountdownWidget = function(on_interruptible, on_busy){
+          var current_session_expiration = undefined;
+          var has_open_session = undefined;
+
+          var is_interruptible = function() {
+            if (current_session_expiration) {
+              if ((current_session_expiration - new Date()) > 0) {
+                return false
+              }
+            }
+            return true;
+          };
+          var busy_time_remaining = function() {
+            return ((current_session_expiration - new Date()) / 1000);
+          }
+
+          this.set_expired = function() {
+            current_session_expiration = undefined;
+            has_open_session = false;
+            on_interruptible();
+          }
+          this.set_busy = function(expiration) {
+            current_session_expiration = expiration;
+            has_open_session = true;
+            on_busy();
+          }
+
+          this.start_poll = function() {
+            setInterval(function() {
+              if (is_interruptible()) {
+                on_interruptible();
+              } else {
+                on_busy(busy_time_remaining());
+              }
+            }, 100)
+          }
+
+        }
+
+        var countdown = new CountdownWidget(
+            function(){
+              $("body").attr("bgcolor", "green");
+              $("#spied_state").text("Interruptible");
+              $("#remaining_busy_time").hide();
+            },
+            function(busy_time_remaining){
+              $("body").attr("bgcolor", "red");
+              $("#spied_state").text("BUSY");
+              $("#remaining_busy_time").show();
+              $("#remaining_busy_time").text(parseInt(busy_time_remaining));
+            }
+        );
+
+        countdown.start_poll();
+        bind_websockets(username, countdown);
+        bind_form_submits();
+
+      });
+    </script>
+  </head>
+  <body>
+    <h3>
+      Status Of:
+    {{ account_key }}
+    </h3>
+    <h4>
+      IS: <span id="spied_state"></span>
+    </h4>
+    <h4 id="remaining_busy_time">
+    </h4>
+    <h4 id="notes_wrapper" style='display: none'>
+      NOTES: <span id="state_notes"></span>
+    </h4>
+    {% if logged_in %}
+    <button type='button' id="clear_session">
+       Clear Session
+    </button>
+    <form id="new_session">
+      <label>
+        New Session
+        <select name='duration'>
+          <option value="300">
+            5 Minutes
+          </option>
+          <option value="600">
+            10 Minutes
+          </option>
+          <option value="1800">
+            30 Minutes
+          </option>
+        </select>
+        <input type='text' name='notes'>
+      </label>
+      <input type='submit'>
+    </form>
+    {% endif %}
+  </body>
+</html>

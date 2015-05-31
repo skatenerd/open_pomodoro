@@ -1,0 +1,6 @@
+flask
+ipython
+Flask-Sockets
+Gunicorn
+redis
+flask-seasurf
