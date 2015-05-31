@@ -8,6 +8,9 @@
         var username = {{ account_key|tojson|safe }};
         var bind_websockets = function(username, countdown_widget) {
           var inbox = new ReconnectingWebSocket("ws://"+ location.host + "/listen");
+          inbox.onopen = function() {
+            inbox.send(username);
+          };
           var handle_refresh_message = function(message_body) {
             countdown_widget.set_busy(new Date(message_body.expiration));
             $("#state_notes").text(message_body.notes);
@@ -19,17 +22,6 @@
             $("#notes_wrapper").toggle(false);
           }
 
-          var ask_to_follow = function(username) {
-            var sendpoll = setInterval(
-              function(){
-                if (inbox.readyState) {
-                  inbox.send(username);
-                  clearInterval(sendpoll);
-                }
-              },
-              100);
-          };
-
           inbox.onmessage=function(raw_message) {
             var message = JSON.parse(raw_message.data);
             if (message.type == 'session_delete') {
@@ -39,7 +31,6 @@
               handle_refresh_message(message.body);
             }
           };
-          ask_to_follow(username);
         };
 
         var bind_form_submits = function() {

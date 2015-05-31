@@ -21,7 +21,7 @@ from flask.ext.seasurf import SeaSurf
 import tempfile
 
 secret_key = "a268f42c-f7d7-4475-b8df-8d85a1b417ea"
-salt = "4e66fd6b882240ad8ae53ebb09710d11"
+salt = "abcdabcdabcdabcdabcdabcdabcdabcd"
 database_path = 'accounts_database.txt'
 
 app = Flask(__name__)
@@ -113,7 +113,8 @@ def delete_session(username):
     del sessions[username]
 
     for stalker in connections[username]:
-        stalker.send(json.dumps({'type': 'session_delete', 'body': {'token': username}}))
+        if not stalker.closed:
+            stalker.send(json.dumps({'type': 'session_delete', 'body': {'token': username}}))
 
     return jsonify(success=True)
 
@@ -150,7 +151,8 @@ def session_as_string(token):
 def broadcast_update(stalked_person):
     message = session_as_string(stalked_person)
     for stalker in connections[stalked_person]:
-        stalker.send(json.dumps({'type': 'session_refresh', 'body': serializable_session(stalked_person)}))
+        if not stalker.closed:
+            stalker.send(json.dumps({'type': 'session_refresh', 'body': serializable_session(stalked_person)}))
 
 @sockets.route('/listen')
 def inbox(ws):
@@ -158,7 +160,8 @@ def inbox(ws):
         if stalked_person:
             connections[stalked_person].append(ws)
             if stalked_person in sessions:
-                ws.send(json.dumps({'type': 'session_refresh', 'body': serializable_session(stalked_person)}))
+                if not ws.closed:
+                    ws.send(json.dumps({'type': 'session_refresh', 'body': serializable_session(stalked_person)}))
     remove_client(ws)
 
 def socket_values(socket):
