@@ -5,6 +5,8 @@
     <script type="text/javascript" src="/static/jquery.min.js"></script>
     <script type="text/javascript">
       $(function() {
+        var start_sound = new Audio("/static/start.mp3");
+        var expired_sound = new Audio("/static/expired.mp3");
         var username = {{ account_key|tojson|safe }};
         var bind_websockets = function(username, countdown_widget) {
           var inbox = new ReconnectingWebSocket("ws://"+ location.host + "/listen");
@@ -46,6 +48,9 @@
 
           $("#new_session input[type=submit]").on('click', function(e) {
             e.preventDefault();
+            expired_sound.pause();
+            expired_sound.currentTime = 0;
+            start_sound.play();
             update_status(parseInt($("#new_session [name=duration]").val()), $("#new_session [name=notes]").val());
           });
           $("#clear_session").on('click', function(e) {
@@ -62,6 +67,7 @@
         var CountdownWidget = function(on_interruptible, on_busy){
           var current_session_expiration = undefined;
           var has_open_session = undefined;
+          var controller = this;
 
           var is_interruptible = function() {
             if (current_session_expiration) {
@@ -77,21 +83,23 @@
 
           this.set_expired = function() {
             current_session_expiration = undefined;
+            var newly_interruptible = has_open_session;
             has_open_session = false;
-            on_interruptible();
+            on_interruptible(newly_interruptible);
           }
+
           this.set_busy = function(expiration) {
             current_session_expiration = expiration;
             has_open_session = true;
-            on_busy();
+            on_busy(busy_time_remaining());
           }
 
           this.start_poll = function() {
             setInterval(function() {
               if (is_interruptible()) {
-                on_interruptible();
+                controller.set_expired();
               } else {
-                on_busy(busy_time_remaining());
+                controller.set_busy(current_session_expiration);
               }
             }, 100)
           }
@@ -99,7 +107,12 @@
         }
 
         var countdown = new CountdownWidget(
-            function(){
+            function(newly_interruptible){
+              if (newly_interruptible) {
+                start_sound.pause();
+                start_sound.currentTime = 0;
+                expired_sound.play();
+              }
               $("body").attr("bgcolor", "green");
               $("#spied_state").text("Interruptible");
               $("#remaining_busy_time").hide();
