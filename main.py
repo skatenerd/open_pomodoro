@@ -141,7 +141,7 @@ def hash_password(password):
 def serializable_session(token):
     session = sessions[token]
     serializable = dict(session)
-    serializable['expiration'] = session['expiration'].isoformat()
+    serializable['expiration'] = "%sZ"%session['expiration'].isoformat()
     serializable['token'] = token
     return serializable
 
