@@ -7,6 +7,15 @@
       $(function() {
         var start_sound = new Audio("/static/start.mp3");
         var expired_sound = new Audio("/static/expired.mp3");
+
+        var play_sound = function(sound) {
+            start_sound.pause();
+            start_sound.currentTime = 0;
+            expired_sound.pause();
+            expired_sound.currentTime = 0;
+            sound.play();
+        };
+
         var username = {{ account_key|tojson|safe }};
         var bind_websockets = function(username, countdown_widget) {
           var inbox = new ReconnectingWebSocket("ws://"+ location.host + "/listen");
@@ -48,9 +57,6 @@
 
           $("#new_session input[type=submit]").on('click', function(e) {
             e.preventDefault();
-            expired_sound.pause();
-            expired_sound.currentTime = 0;
-            start_sound.play();
             update_status(parseInt($("#new_session [name=duration]").val()), $("#new_session [name=notes]").val());
           });
           $("#clear_session").on('click', function(e) {
@@ -62,7 +68,6 @@
             })
           });
         };
-
 
         var CountdownWidget = function(on_interruptible, on_busy){
           var current_session_expiration = undefined;
@@ -77,21 +82,30 @@
             }
             return true;
           };
-          var busy_time_remaining = function() {
-            return ((current_session_expiration - new Date()) / 1000);
+          var busy_time_remaining = function(expiration) {
+            return ((expiration - new Date()) / 1000);
           }
 
           this.set_expired = function() {
-            current_session_expiration = undefined;
             var newly_interruptible = has_open_session;
+
+            //set the state(s) to reflect nonbusy-ness
+            current_session_expiration = undefined;
             has_open_session = false;
+
             on_interruptible(newly_interruptible);
           }
 
           this.set_busy = function(expiration) {
-            current_session_expiration = expiration;
-            has_open_session = true;
-            on_busy(busy_time_remaining());
+            if (busy_time_remaining(expiration) > 0) {
+              var already_busy = has_open_session;
+
+              //set the state(s) to reflect busy-ness
+              current_session_expiration = expiration;
+              has_open_session = true;
+
+              on_busy(busy_time_remaining(expiration), already_busy);
+            }
           }
 
           this.start_poll = function() {
@@ -109,16 +123,17 @@
         var countdown = new CountdownWidget(
             function(newly_interruptible){
               if (newly_interruptible) {
-                start_sound.pause();
-                start_sound.currentTime = 0;
-                expired_sound.play();
+                play_sound(expired_sound);
               }
               $("body").attr("bgcolor", "green");
               $("#spied_state").text("Interruptible");
               $("#remaining_busy_time").hide();
               $("#notes_wrapper").hide();
             },
-            function(busy_time_remaining){
+            function(busy_time_remaining, already_busy){
+              if (!already_busy) {
+                play_sound(start_sound);
+              }
               $("body").attr("bgcolor", "red");
               $("#spied_state").text("BUSY");
               $("#remaining_busy_time").show();
