@@ -10,7 +10,7 @@ from flask import (
     #abort,
 )
 import gevent
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, deque
 import json
 import hashlib
 import pickle
@@ -33,6 +33,8 @@ sockets = Sockets(app)
 
 sessions = {
 }
+
+recently_active_users = deque(maxlen=10)
 
 connections = defaultdict(lambda: [])
 
@@ -92,6 +94,9 @@ def sessions_resource():
 
     username = session['logged_in_as']
 
+    if username not in recently_active_users:
+        recently_active_users.appendleft(username)
+
     if request.method == 'PUT':
         return put_session(username, request)
     if request.method == 'DELETE':
@@ -120,10 +125,7 @@ def delete_session(username):
 
 @app.route('/', methods=["GET"])
 def front():
-    if session.get('logged_in_as') is None:
-        return render_template('front.html')
-    who_you_are = session['logged_in_as']
-    return redirect(url_for('spy_on_someone', spied_token=who_you_are))
+    return render_template('front.html', recently_active=recently_active_users, current_user=session.get('logged_in_as'))
 
 @app.route('/logout', methods=["POST", 'GET'])
 def logout():

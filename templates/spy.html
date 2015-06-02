@@ -149,6 +149,18 @@
     </script>
   </head>
   <body>
+    {% if logged_in %}
+    <div>
+      <a href={{url_for('logout')}}>
+        Logout
+      </a>
+    </div>
+    {% endif %}
+    <div>
+      <a href={{url_for('front')}}>
+        Home
+      </a>
+    </div>
     <h3>
       Status Of:
     {{ account_key }}
