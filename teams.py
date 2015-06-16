@@ -10,9 +10,6 @@ class AlreadyExists(Exception):
 class NotFound(Exception):
     pass
 
-class UsernameNotFound(Exception):
-    pass
-
 def remove_team_member(team_name, team_member):
     def transform_database(database_contents):
         if not _team_already_exists(team_name):
