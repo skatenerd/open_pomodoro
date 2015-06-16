@@ -75,14 +75,6 @@ def login():
 def watch_team(team_name):
     return render_template('team_view.html', team_name=team_name, team_members=list(teams.get_team(team_name)['usernames']))
 
-@app.route('/teams/<string:team_name>', methods=["GET"])
-def team_view_get(team_name):
-    try:
-        team = teams.get_team(team_name)
-        return jsonify(usernames=list(team['usernames']))
-    except teams.NotFound:
-        return jsonify(**{'exists': False}), 404
-
 @app.route('/teams', methods=["POST"])
 def create_team_view():
     #usernames = request.json['usernames']
@@ -114,13 +106,6 @@ def add_team_member(team_name, user_name):
         except teams.NotFound as e:
             return jsonify(error='team not found'), 404
         return jsonify(success=True)
-
-@app.route('/users/exists/<string:username>', methods=["GET"])
-def users_exists(username):
-    if users.username_exists(username):
-        return jsonify(**{'exists': True})
-
-    return jsonify(**{'exists': False}), 404
 
 # rename me
 @app.route('/sessions', methods=["PUT", 'DELETE'])
