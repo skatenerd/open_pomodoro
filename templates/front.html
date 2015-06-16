@@ -8,8 +8,9 @@
           $.ajax({
             type: 'POST',
             url: '/login',
+            contentType: 'application/json',
             beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
-            data: {username: $('#login [name=username]').val(), password: $('#login [name=password]').val()},
+            data: JSON.stringify({username: $('#login [name=username]').val(), password: $('#login [name=password]').val()}),
             success: function(response) {
               window.location.href = response.new_path;
             },
@@ -24,8 +25,9 @@
             $.ajax({
               type: 'POST',
               url: '/create_account',
+              contentType: 'application/json',
               beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
-              data: {username: $('#signup [name=username]').val(), password: $('#signup [name=password]').val()},
+              data: JSON.stringify({username: $('#signup [name=username]').val(), password: $('#signup [name=password]').val()}),
               success: function(response) {
                 window.location.href = response.new_path;
               },
@@ -35,6 +37,25 @@
             })
           });
         });
+        $(function() {
+          $("#team input[type=submit]").on('click', function(e) {
+            e.preventDefault();
+            $.ajax({
+              type: 'POST',
+              url: '/teams',
+              contentType: 'application/json',
+              data: JSON.stringify({team_name: $("#team input[name=team_name]").val()}),
+              beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+              success: function(response) {
+                window.location.href = response.new_path;
+              },
+              error: function() {
+                console.log('fail');
+              },
+            })
+          });
+        });
+
         $("#spy_on_someone input[type=submit]").on('click', function(e) {
           e.preventDefault();
           window.location.pathname = "/watch/" + $("#spy_on_someone input[name=spied_person]").val();
@@ -75,6 +96,15 @@
       <input type='password' name='password'>
       <input type='submit'>
     </form>
+    {% if current_user %}
+    <form id="team">
+      <h4>
+        NEW TEAM VIEW
+      </h4>
+      <input type='text' name='team_name'>
+      <input type='submit'>
+    </form>
+    {% endif %}
     <form id="signup">
       <h4>
         NEW ACCOUNT

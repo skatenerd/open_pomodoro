@@ -1,0 +1,113 @@
+<html>
+  <head>
+    <meta id="csrf_token" csrf_token="{{ csrf_token() }}">
+    <script type="text/javascript" src="/static/jquery.min.js"></script>
+    <script type="text/javascript" src="/static/mustache.min.js"></script>
+    <script type="text/javascript">
+      $(function() {
+        {% raw %}
+        var mustache_template = "" +
+        "{{#usernames}}" +
+          "<div>" +
+            "<iframe src='/watch/{{.}}'>" +
+            "</iframe>" +
+            "<button data-username='{{.}}' data-remove-team-member>Remove</button>" +
+          "</div>" +
+        "{{/usernames}}" +
+        "";
+        {% endraw %}
+        var team_name = {{ team_name|tojson|safe }};
+
+        var usernames = {{ team_members|tojson|safe }};
+
+        var push_unique = function(collection, value) {
+          var already_in_list = !!($.grep(collection, function(item){return item == value}).length);
+          if (already_in_list) {
+            return;
+          }
+          collection.push(value);
+        }
+
+        var remove_from_list = function(collection, value) {
+          var index = collection.indexOf(value);
+          if (index > -1) {
+            collection.splice(index, 1);
+          }
+          return collection;
+        }
+
+        var bind_remove_events = function() {
+          $("[data-remove-team-member]").off('click');
+          $("[data-remove-team-member]").on('click', function(e) {
+            var target_button = $(this);
+            var username = target_button.data('username');
+
+            $.ajax({
+              type: "DELETE",
+              url: "/teams/" + team_name + "/" + username,
+              contentType: 'application/json',
+              beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+              success: function(){
+                remove_from_list(usernames, username);
+                populate_statuses();
+              },
+              error: function(){
+                console.log('invalid username');
+              },
+            });
+          });
+        };
+
+        var populate_statuses = function() {
+          var currentListMarkup = Mustache.render(mustache_template, {usernames: usernames});
+          $("#team_so_far").html(currentListMarkup);
+          bind_remove_events();
+        }
+
+        populate_statuses();
+
+        $("form#add_user input[type=submit]").on('click', function(e) {
+          e.preventDefault();
+          var username = $("form#add_user input[name=username]").val();
+          $.ajax({
+            type: "PUT",
+            url: "/teams/" + team_name + "/" + username,
+            contentType: 'application/json',
+            beforeSend: function(xhr){xhr.setRequestHeader('X-CSRFToken', $("#csrf_token").attr("csrf_token"))},
+            success: function(){
+              push_unique(usernames, username);
+              populate_statuses();
+            },
+            error: function(){
+              console.log('invalid username');
+            },
+          });
+        });
+
+      });
+    </script>
+  </head>
+  <body>
+    {% if logged_in %}
+    <div>
+      <a href={{url_for('logout')}}>
+        Logout
+      </a>
+    </div>
+    {% endif %}
+    <div>
+      <a href={{url_for('front')}}>
+        Home
+      </a>
+    </div>
+    <h3>
+      Add a team member
+    </h3>
+    <form id='add_user'>
+      <input type='text' name='username' placeholder="username"/>
+      <input type='submit' value='Add!'>
+    </form>
+    <div id="team_so_far">
+    </div>
+  </body>
+</html>

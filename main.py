@@ -12,18 +12,13 @@ from flask import (
 import gevent
 from collections import namedtuple, defaultdict, deque
 import json
-import hashlib
 import pickle
 from flask_sockets import Sockets
 import datetime
-import os
 from flask.ext.seasurf import SeaSurf
-import tempfile
+import teams, users
 
 secret_key = "a268f42c-f7d7-4475-b8df-8d85a1b417ea"
-salt = "abcdabcdabcdabcdabcdabcdabcdabcd"
-database_path = 'accounts_database.txt'
-
 app = Flask(__name__)
 app.debug = True
 app.secret_key = secret_key
@@ -31,64 +26,105 @@ csrf = SeaSurf(app)
 
 sockets = Sockets(app)
 
-sessions = {
+pomodoro_sessions = {
 }
 
 recently_active_users = deque(maxlen=10)
 
 connections = defaultdict(lambda: [])
 
-def initialize_file_database(path):
-    if not os.path.isfile(path):
-        with open(path, 'w') as f:
-            pickle.dump({}, f)
-
-initialize_file_database(database_path)
-
 @app.route('/watch/<string:spied_token>', methods=['GET'])
 def spy_on_someone(spied_token):
     logged_in = session.get('logged_in_as') == spied_token
-    if spied_token in get_database_contents(database_path):
+    if users.username_exists(spied_token):
         return render_template('spy.html', account_key=spied_token, logged_in=logged_in)
-    return render_template('not_found.html', account_key=spied_token, status_code=404)
-
-def set_password(username, password):
-    def transform_database(database):
-        database[username] = hash_password(password)
-        return database
-    transform_file(database_path, transform_database)
-
-def username_exists(username):
-    return username in get_database_contents(database_path)
+    return render_template('not_found.html', account_key=spied_token), 404
 
 @app.route('/create_account', methods=["POST"])
 def create_account():
-    username = request.values['username']
-    password = request.values['password']
-    if not username_exists(username):
-        session['logged_in_as'] = username
-        set_password(username, password)
-        sessions[username] = 'Busy playing on the internet'
-        return jsonify(**{'success': True, 'new_path': url_for('spy_on_someone', spied_token=username)})
-    else:
-        response = jsonify(**{'success': False, 'details': 'already exists'})
-        response.status_code = 403
-        return response
+    username = request.json['username']
+    password = request.json['password']
+    # Do the username-check inside of transaction
+    try:
+        users.set_password(username, password)
+    except users.AlreadyExists:
+        return jsonify(error='already exists'), 403
+
+    session['logged_in_as'] = username
+    expiration = datetime.datetime.utcnow() + datetime.timedelta(seconds=300)
+    pomodoro_sessions[username] = {
+        'expiration': expiration,
+        'status': 'busy',
+        'notes': 'Busy playing on the internet',
+    }
+
+    return jsonify(success=True, new_path=url_for('spy_on_someone', spied_token=username))
 
 @app.route('/login', methods=["POST"])
 def login():
-    username = request.values['username']
-    password = request.values['password']
-    if valid_login(username, password):
+    username = request.json['username']
+    password = request.json['password']
+    if users.valid_login(username, password):
         session['logged_in_as'] = username
         return jsonify(**{'success': True, 'new_path': url_for('spy_on_someone', spied_token=username)})
     else:
         response = jsonify(**{'success': False, 'details': 'invalid credentials'})
-        response.status_code = 403
-        return response
+        return response, 403
 
+@app.route('/teams/<string:team_name>/watch', methods=["GET"])
+def watch_team(team_name):
+    return render_template('team_view.html', team_name=team_name, team_members=list(teams.get_team(team_name)['usernames']))
+
+@app.route('/teams/<string:team_name>', methods=["GET"])
+def team_view_get(team_name):
+    try:
+        team = teams.get_team(team_name)
+        return jsonify(usernames=list(team['usernames']))
+    except teams.NotFound:
+        return jsonify(**{'exists': False}), 404
+
+@app.route('/teams', methods=["POST"])
+def create_team_view():
+    #usernames = request.json['usernames']
+    if session.get('logged_in_as') is None:
+        return jsonify(error='plz log in'), 403
+    username = session['logged_in_as']
+    team_name = request.json['team_name']
+    try:
+        teams.create_team(team_name, username)
+    except teams.AlreadyExists:
+        return jsonify(error='team already exists'), 400
+    except users.NotFound:
+        return jsonify(error='user not found'), 404
+    return jsonify(success=True, new_path=url_for('watch_team', team_name=team_name))
+
+@app.route('/teams/<string:team_name>/<string:user_name>', methods=["PUT", "DELETE"])
+def add_team_member(team_name, user_name):
+    if request.method == 'PUT':
+        try:
+            teams.add_team_member(team_name, user_name)
+        except teams.NotFound as e:
+            return jsonify(error='team not found'), 404
+        except users.NotFound as e:
+            return jsonify(error='user not found'), 404
+        return jsonify(success=True)
+    if request.method == 'DELETE':
+        try:
+            teams.remove_team_member(team_name, user_name)
+        except teams.NotFound as e:
+            return jsonify(error='team not found'), 404
+        return jsonify(success=True)
+
+@app.route('/users/exists/<string:username>', methods=["GET"])
+def users_exists(username):
+    if users.username_exists(username):
+        return jsonify(**{'exists': True})
+
+    return jsonify(**{'exists': False}), 404
+
+# rename me
 @app.route('/sessions', methods=["PUT", 'DELETE'])
-def sessions_resource():
+def pomodoro_sessions_resource():
     if session.get('logged_in_as') is None:
         return render_template('front.html')
 
@@ -108,14 +144,14 @@ def put_session(username, request):
 
     expiration = datetime.datetime.utcnow() + datetime.timedelta(seconds=duration)
 
-    sessions[username] = {'expiration': expiration, 'status': 'busy', 'notes': notes}
+    pomodoro_sessions[username] = {'expiration': expiration, 'status': 'busy', 'notes': notes}
     broadcast_update(username)
     return jsonify(success=True)
 
 def delete_session(username):
-    if username not in sessions:
+    if username not in pomodoro_sessions:
         return render_template('not_found.html', account_key=username, status_code=404)
-    del sessions[username]
+    del pomodoro_sessions[username]
 
     for stalker in connections[username]:
         if not stalker.closed:
@@ -132,16 +168,8 @@ def logout():
     session['logged_in_as'] = None
     return redirect(url_for('front'))
 
-def valid_login(username, password):
-    with open(database_path) as f:
-        accounts = pickle.load(f)
-    return accounts.get(username) == hash_password(password)
-
-def hash_password(password):
-    return hashlib.sha512(password + salt).hexdigest()
-
 def serializable_session(token):
-    session = sessions[token]
+    session = pomodoro_sessions[token]
     serializable = dict(session)
     serializable['expiration'] = "%sZ"%session['expiration'].isoformat()
     serializable['token'] = token
@@ -161,7 +189,7 @@ def inbox(ws):
     for stalked_person in socket_values(ws):
         if stalked_person:
             connections[stalked_person].append(ws)
-            if stalked_person in sessions:
+            if stalked_person in pomodoro_sessions:
                 if not ws.closed:
                     ws.send(json.dumps({'type': 'session_refresh', 'body': serializable_session(stalked_person)}))
     remove_client(ws)
@@ -176,24 +204,3 @@ def remove_client(client_socket):
     for listener_list in connections.values():
         if client_socket in listener_list:
             listener_list.remove(client_socket)
-
-db_write_lock = gevent.lock.Semaphore()
-
-def get_database_contents(path):
-    with open(path, 'r') as f:
-        contents = pickle.load(f)
-    return contents
-
-def write_database_contents(contents, path):
-    with tempfile.NamedTemporaryFile(delete=False) as out_tmp:
-        pickle.dump(contents, out_tmp)
-        os.rename(out_tmp.name, path)
-
-def transform_file(path, transformation):
-    try:
-        db_write_lock.acquire()
-        contents = get_database_contents(path)
-        new_contents = transformation(contents)
-        write_database_contents(new_contents, path)
-    finally:
-        db_write_lock.release()
